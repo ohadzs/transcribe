@@ -1,7 +1,8 @@
 [project]
 name = "transcribe"
 version = "0.1.0"
-description = "Transcribe Hebrew audio (files, YouTube, podcasts) with ivrit.ai Whisper models"
+description = "Local Hebrew speech-to-text for podcasts, YouTube and audio files (ivrit.ai Whisper, MLX / faster-whisper)"
+license = "MIT"
 requires-python = ">=3.10,<3.14"
 dependencies = [
     "tqdm>=4.66",
