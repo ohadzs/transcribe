@@ -23,10 +23,13 @@ transcribe ~/Downloads/lecture.m4a
 | Flag | What it does |
 |---|---|
 | `--accurate` | `large-v3` instead of `large-v3-turbo`: slightly better, ~3x slower |
-| `-o <dir>` | output folder (default `~/Documents/Transcripts`) |
+| `--local` | keep the transcript on this machine (`~/Documents/Transcripts`) instead of uploading it |
+| `-o <dir>` | local output folder (implies `--local`) |
 | `--title <name>` | output file name instead of the episode title |
 
 Output: `<title>.txt` (clean paragraphs) and `<title> - timestamps.txt` (one line per segment with start/end times).
+
+Where it goes: by default both files are uploaded with [rclone](https://rclone.org) to `gdrive:Transcripts` (your Google Drive, so your AI can read them from anywhere) and the local copies are deleted. Set `TRANSCRIBE_REMOTE` to use another rclone remote/folder. If rclone is missing or the upload fails, the files stay in `~/Documents/Transcripts` and you get a warning — a transcript is never lost. `--local` skips the upload.
 
 Inputs: local audio/video, YouTube (via yt-dlp), Apple Podcasts, direct audio URLs, and Spotify episode links — a Spotify link is resolved to the same episode in the show's **public RSS feed** (via the iTunes Search API). Spotify-exclusive episodes stop with a clear message; the tool does not bypass DRM.
 
@@ -73,11 +76,12 @@ transcribe ~/Downloads/recording.m4a
 | אפשרות | מה היא עושה |
 |---|---|
 | ‏`--accurate` | מודל ‏large-v3 הגדול: מדויק מעט יותר, איטי פי 3 בערך |
-| ‏`-o <תיקייה>` | תיקיית פלט אחרת |
+| ‏`--local` | להשאיר את התמליל במחשב ולא להעלות לדרייב |
+| ‏`-o <תיקייה>` | תיקיית פלט מקומית אחרת (כמו ‏`--local`) |
 | ‏`--title <שם>` | שם קובץ אחר במקום שם הפרק |
 
 ## פלט
-בתיקייה ‏`~/Documents/Transcripts`, לפי שם הפרק:
+כברירת מחדל התמליל עולה לגוגל דרייב, לתיקייה ‏`Transcripts` (דרך ‏rclone, ‏remote בשם ‏`gdrive:`), והעותק המקומי נמחק. אם ההעלאה נכשלת — הקבצים נשארים ב־‏`~/Documents/Transcripts` ומופיעה אזהרה. עם ‏`--local` הם נשארים שם מלכתחילה. לפי שם הפרק:
 - קובץ ‏`<שם>.txt` — תמליל נקי, מחולק לפסקאות
 - קובץ ‏`<שם> - timestamps.txt` — כל משפט עם שעת התחלה וסיום
 
