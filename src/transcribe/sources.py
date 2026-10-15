@@ -66,27 +66,50 @@ def _local(path: Path) -> Source:
 
 # ---------- YouTube and anything else yt-dlp understands ----------
 
+# YouTube sometimes answers the default client's stream with "HTTP 403: Forbidden";
+# other player clients usually still work, so on failure retry through these in order.
+YT_CLIENT_FALLBACKS = [None, "web_safari,android", "tv,web_embedded", "ios,mweb"]
+
+
+def _is_youtube(url: str) -> bool:
+    host = urllib.parse.urlparse(url).netloc.lower()
+    return any(h in host for h in ("youtube.com", "youtu.be"))
+
+
 def _yt_dlp(url: str, workdir: Path) -> Source:
-    exe = shutil.which("yt-dlp") or str(Path(sys.executable).parent / "yt-dlp")
-    info = subprocess.run(
-        [exe, "--no-playlist", "--dump-single-json", url],
-        capture_output=True, text=True,
-    )
-    if info.returncode != 0:
-        raise SourceError(f"Could not read this link:\n{info.stderr.strip()[-500:]}")
-    title = json.loads(info.stdout).get("title") or "audio"
+    # Prefer the yt-dlp bundled with this tool (kept current with it) over a system one.
+    bundled = Path(sys.executable).parent / "yt-dlp"
+    exe = str(bundled) if bundled.exists() else (shutil.which("yt-dlp") or "yt-dlp")
+    clients = YT_CLIENT_FALLBACKS if _is_youtube(url) else [None]
     out = workdir / "download.%(ext)s"
-    print("Downloading audio...")
-    dl = subprocess.run(
-        [exe, "--no-playlist", "-f", "bestaudio/best", "-x", "--audio-format", "m4a",
-         "--progress", "--newline", "-o", str(out), url],
-    )
-    if dl.returncode != 0:
-        raise SourceError("Download failed (see the yt-dlp messages above).")
-    files = sorted(workdir.glob("download.*"))
-    if not files:
-        raise SourceError("Download finished but no audio file was produced.")
-    return Source(audio=files[0], title=title)
+    title, last_err = None, ""
+    for i, client in enumerate(clients):
+        extra = ["--extractor-args", f"youtube:player_client={client}"] if client else []
+        if i:
+            print(f"Retrying with YouTube player client: {client}")
+        if title is None:
+            info = subprocess.run(
+                [exe, "--no-playlist", "--dump-single-json", *extra, url],
+                capture_output=True, text=True,
+            )
+            if info.returncode != 0:
+                last_err = info.stderr.strip()[-500:]
+                continue
+            title = json.loads(info.stdout).get("title") or "audio"
+        for f in workdir.glob("download.*"):  # leftovers from a failed attempt
+            f.unlink()
+        print("Downloading audio...")
+        dl = subprocess.run(
+            [exe, "--no-playlist", "-f", "bestaudio/best", "-x", "--audio-format", "m4a",
+             *extra, "--progress", "--newline", "-o", str(out), url],
+        )
+        files = sorted(workdir.glob("download.*.m4a")) or sorted(workdir.glob("download.*"))
+        if dl.returncode == 0 and files:
+            return Source(audio=files[0], title=title)
+        last_err = "Download failed (see the yt-dlp messages above)."
+    if title is None:
+        raise SourceError(f"Could not read this link:\n{last_err}")
+    raise SourceError(last_err)
 
 
 # ---------- podcasts: RSS feeds ----------
