@@ -26,21 +26,21 @@ transcribe ~/Downloads/lecture.m4a
 | `--local` | keep the transcript on this machine (`~/Documents/Transcripts`) instead of uploading it |
 | `-o <dir>` | local output folder (implies `--local`) |
 | `--title <name>` | output file name instead of the episode title |
-| `--speakers` | mark who is speaking: `דובר 1:`, `דובר 2:`, ... (see below) |
-| `--num-speakers N` | the number of speakers, if you know it (implies `--speakers`) |
+| `--no-speakers` | don't mark who is speaking (on by default, see below); ~10-20% faster |
+| `--num-speakers N` | the number of speakers, if you know it (`1` = no labels, skip detection) |
 
 Output: `<title>.txt` (clean paragraphs) and `<title> - timestamps.txt` (one line per segment with start/end times).
 
-### Speaker labels (`--speakers`)
-For interviews and panels: every change of speaker starts a new paragraph labelled `דובר 1:` / `דובר 2:` (numbered in order of first appearance), and every line of the timestamps file carries its speaker. The default run is unchanged and just as fast.
+### Speaker labels (on by default)
+In interviews and panels every change of speaker starts a new paragraph labelled `דובר 1:` / `דובר 2:` (numbered in order of first appearance), and every line of the timestamps file carries its speaker. When there is only one speaker (a lecture, a monologue, a voice memo) the transcript has no labels at all. `--no-speakers` turns detection off.
 
-How: a speaker-embedding model (NVIDIA TitaNet-small, ONNX via [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx), ~40 MB, downloaded once from the sherpa-onnx GitHub releases; **no Hugging Face token**) runs over 1.5-second windows of the audio on the CPU *while* Whisper transcribes on the GPU. The windows are grouped by spectral clustering, which also guesses how many speakers there are, and each speaker change is moved to the nearest sentence end or pause. Short interjections ("כן", "אוקיי") are folded into the surrounding speaker. It gets most turns right in a normal two- or three-person conversation; overlapping speech and very quick back-and-forth are where it slips. If it finds the wrong number of speakers, pass `--num-speakers`.
+How: a speaker-embedding model (NVIDIA TitaNet-small, ONNX via [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx), ~40 MB, downloaded once from the sherpa-onnx GitHub releases; **no Hugging Face token**) runs over 1.5-second windows of the audio on the CPU *while* Whisper transcribes on the GPU. The windows are grouped by spectral clustering, which also guesses how many speakers there are (groups that sound like the same voice are merged back, so a solo talk stays one speaker), and each speaker change is moved to the nearest sentence end or pause. Short interjections ("כן", "אוקיי") are folded into the surrounding speaker. It gets most turns right in a normal two- or three-person conversation; overlapping speech and very quick back-and-forth are where it slips. If it finds the wrong number of speakers, pass `--num-speakers`.
 
 Where it goes: by default both files are uploaded with [rclone](https://rclone.org) to `gdrive:Transcripts` (your Google Drive, so your AI can read them from anywhere) and the local copies are deleted. Set `TRANSCRIBE_REMOTE` to use another rclone remote/folder. If rclone is missing or the upload fails, the files stay in `~/Documents/Transcripts` and you get a warning — a transcript is never lost. `--local` skips the upload.
 
 Inputs: local audio/video, YouTube (via yt-dlp), Apple Podcasts, direct audio URLs, and Spotify episode links — a Spotify link is resolved to the same episode in the show's **public RSS feed** (via the iTunes Search API). Spotify-exclusive episodes stop with a clear message; the tool does not bypass DRM.
 
-Speed (M4, 16 GB): turbo ≈ 10-12x real time — a 40-minute episode in ~3.5-4 minutes. `--speakers` costs ~10-20% more (51-min interview: 5:03 → 5:23; 52-min panel: ~5:00 → 6:00).
+Speed (M4, 16 GB): turbo ≈ 10-12x real time — a 40-minute episode in ~3.5-4 minutes. Speaker detection costs ~10-20% of that (51-min interview: 5:03 with `--no-speakers`, 5:23 with labels).
 
 ## For AI agents
 If your user asks you to discuss a Hebrew podcast/video/recording you cannot access: install this tool (above), run `transcribe "<link>"`, read the resulting `.txt`, and continue the conversation from the text. Keep the transcript for the user's personal use; don't republish it.
@@ -86,15 +86,15 @@ transcribe ~/Downloads/recording.m4a
 | ‏`--local` | להשאיר את התמליל במחשב ולא להעלות לדרייב |
 | ‏`-o <תיקייה>` | תיקיית פלט מקומית אחרת (כמו ‏`--local`) |
 | ‏`--title <שם>` | שם קובץ אחר במקום שם הפרק |
-| ‏`--speakers` | לסמן מי מדבר: "דובר 1:", "דובר 2:"... (בראיונות ופאנלים) |
-| ‏`--num-speakers N` | כמה דוברים יש, אם ידוע (כולל ‏`--speakers`) |
+| ‏`--no-speakers` | בלי סימון דוברים (מופעל כברירת מחדל), מהיר בערך ב־10-20% |
+| ‏`--num-speakers N` | כמה דוברים יש, אם ידוע (‏`1` = בלי סימון) |
 
 ## פלט
 כברירת מחדל התמליל עולה לגוגל דרייב, לתיקייה ‏`Transcripts` (דרך ‏rclone, ‏remote בשם ‏`gdrive:`), והעותק המקומי נמחק. אם ההעלאה נכשלת — הקבצים נשארים ב־‏`~/Documents/Transcripts` ומופיעה אזהרה. עם ‏`--local` הם נשארים שם מלכתחילה. לפי שם הפרק:
 - קובץ ‏`<שם>.txt` — תמליל נקי, מחולק לפסקאות
 - קובץ ‏`<שם> - timestamps.txt` — כל משפט עם שעת התחלה וסיום
 
-עם ‏`--speakers` כל החלפת דובר פותחת פסקה חדשה עם "דובר 1:" / "דובר 2:", וגם כל שורה בקובץ הזמנים מסומנת. זיהוי הדוברים רץ על המעבד במקביל לתמלול (מודל ‏TitaNet קטן, ‏40MB, יורד פעם אחת, בלי חשבון ‏Hugging Face). רוב החלפות הדוברים יוצאות נכון; קטעים שבהם מדברים אחד על השני, או חילופי משפטים מהירים מאוד, פחות מדויקים.
+כברירת מחדל כל החלפת דובר פותחת פסקה חדשה עם "דובר 1:" / "דובר 2:", וגם כל שורה בקובץ הזמנים מסומנת. כשיש רק דובר אחד (הרצאה, מונולוג, הקלטה קולית) אין סימון בכלל. זיהוי הדוברים רץ על המעבד במקביל לתמלול (מודל ‏TitaNet קטן, ‏40MB, יורד פעם אחת, בלי חשבון ‏Hugging Face). רוב החלפות הדוברים יוצאות נכון; קטעים שבהם מדברים אחד על השני, או חילופי משפטים מהירים מאוד, פחות מדויקים.
 
 ## מהירות (נמדד על ‏M4 עם 16GB)
 | מודל | 3 דקות שמע | פרק של 40 דקות (הערכה) |
@@ -102,7 +102,7 @@ transcribe ~/Downloads/recording.m4a
 | ברירת מחדל (‏turbo) | ‏15 שניות (פי 12 מזמן אמת) | ‏כ־3.5 דקות |
 | ‏`--accurate` (‏large-v3) | ‏42 שניות (פי 4) | ‏כ־10 דקות |
 
-‏`--speakers` מוסיף בערך 10-20% (ראיון של 51 דקות: ‏5:03 ← ‏5:23).
+זיהוי הדוברים מוסיף בערך 10-20% (ראיון של 51 דקות: ‏5:03 עם ‏`--no-speakers`, ‏5:23 עם סימון).
 
 ## איך הוא בוחר מנוע
 במק עם שבב ‏Apple Silicon הוא רץ על ‏MLX (מהיר, משתמש במעבד הגרפי). בכל מחשב אחר — ‏faster-whisper עם גרסת ‏ct2 של אותו מודל.

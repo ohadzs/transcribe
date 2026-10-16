@@ -23,6 +23,9 @@ WINDOW, HOP = 1.5, 0.75   # seconds; each window labels the HOP-wide stretch at 
 MAX_SPEAKERS = 8
 MAX_CLUSTER_WINDOWS = 4000  # cluster at most this many windows (memory); the rest join the nearest centroid
 PRUNE = 0.1               # keep each window's top 10% affinities (NME-SC style p-pruning)
+# The eigengap always finds 2+ groups. Groups whose mean (raw) embeddings are this similar are one
+# voice split in two. Measured: solo talks 0.92, the closest pair of real different speakers 0.49.
+SAME_SPEAKER = 0.7
 
 
 @dataclass
@@ -92,6 +95,28 @@ def _spectral(X: np.ndarray, n: int | None) -> np.ndarray:
     return best[1]
 
 
+def _merge_same(E: np.ndarray, lab: np.ndarray) -> np.ndarray:
+    """Merge clusters that are really the same voice (e.g. a solo lecture split in two)."""
+    R = E / np.linalg.norm(E, axis=1, keepdims=True)
+    ids = list(np.unique(lab))
+    cent = np.stack([R[lab == c].mean(0) for c in ids])
+    cent /= np.linalg.norm(cent, axis=1, keepdims=True)
+    sim = cent @ cent.T
+    root = list(range(len(ids)))
+
+    def find(i: int) -> int:
+        while root[i] != i:
+            i = root[i]
+        return i
+
+    for i in range(len(ids)):
+        for j in range(i + 1, len(ids)):
+            if sim[i, j] > SAME_SPEAKER:
+                root[find(j)] = find(i)
+    mapping = {c: find(i) for i, c in enumerate(ids)}
+    return np.array([mapping[c] for c in lab])
+
+
 def diarize(path: str, num_speakers: int | None = None) -> list[Turn]:
     x = load_audio(path)
     E, starts, rms = _embed(x)
@@ -104,6 +129,8 @@ def diarize(path: str, num_speakers: int | None = None) -> list[Turn]:
     lab_sub = _spectral(X[sub], num_speakers)
     cent = np.stack([X[sub][lab_sub == c].mean(0) for c in np.unique(lab_sub)])
     lab = np.argmax(X @ cent.T, 1) if len(sub) < len(X) else lab_sub
+    if not num_speakers:
+        lab = _merge_same(E[speech], lab)
 
     turns: list[Turn] = []
     for t0, sp in zip(starts[speech], lab):

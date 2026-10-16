@@ -111,7 +111,11 @@ def _with_speakers(audio: str, eng: str, model: str, num_speakers: int | None) -
         print("Waiting for speaker detection to finish...")
         turns = turns.result()
     labelled = diarize.label(segs, turns)
-    print(f"Speakers found: {len({s.speaker for s in labelled})}")
+    n = len({s.speaker for s in labelled})
+    if n <= 1:  # a lecture or monologue: no labels at all
+        print("One speaker -- no speaker labels.")
+        return segs
+    print(f"Speakers found: {n}")
     return labelled
 
 
@@ -122,10 +126,14 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("-o", "--out", type=Path, help=f"local output folder (implies --local; default: {DEFAULT_OUT})")
     p.add_argument("--accurate", action="store_true", help="use the larger large-v3 model (slower, a bit more accurate)")
     p.add_argument("--title", help="override the output file name")
-    p.add_argument("--speakers", action="store_true", help='mark speaker turns ("דובר 1:", "דובר 2:", ...)')
-    p.add_argument("--num-speakers", type=int, metavar="N", help="how many speakers there are, if known (implies --speakers)")
+    p.add_argument("--no-speakers", dest="speakers", action="store_false",
+                   help='don\'t mark speaker turns ("דובר 1:", "דובר 2:", ...); a bit faster')
+    p.add_argument("--speakers", action="store_true", help=argparse.SUPPRESS)  # the default now; kept for old scripts
+    p.add_argument("--num-speakers", type=int, metavar="N", help="how many speakers there are, if known")
+    p.set_defaults(speakers=True)
     a = p.parse_args(argv)
-    a.speakers = a.speakers or bool(a.num_speakers)
+    if a.num_speakers == 1:
+        a.speakers = False
 
     eng, model, m = engine.choose("accurate" if a.accurate else None)
     print(f"Machine: {m['cpu']}, {m['ram_gb']:.0f} GB RAM -> engine {eng}, model {model}")
