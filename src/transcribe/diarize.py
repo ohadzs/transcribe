@@ -72,6 +72,8 @@ def _embed(x: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
 
 def _spectral(X: np.ndarray, n: int | None) -> np.ndarray:
     from scipy.cluster.vq import kmeans2
+    from scipy.sparse import csr_matrix
+    from scipy.sparse.linalg import eigsh
 
     A = X @ X.T
     k = max(int(PRUNE * len(A)), 5)
@@ -79,8 +81,14 @@ def _spectral(X: np.ndarray, n: int | None) -> np.ndarray:
     A = np.maximum(A, A.T)
     np.fill_diagonal(A, 0.0)
     d = 1 / np.sqrt(np.maximum(A.sum(1), 1e-9))
-    lap = np.eye(len(A), dtype=A.dtype) - d[:, None] * A * d[None, :]
-    vals, vecs = np.linalg.eigh(lap)
+    # Smallest eigenvalues of the normalized Laplacian = 1 - largest of D^-1/2 A D^-1/2. A sparse
+    # Lanczos solve for just these few is fast and robust; a dense eigh (LAPACK) can stall for
+    # minutes when it competes with MLX for the CPU.
+    norm_aff = csr_matrix((d[:, None] * A * d[None, :]).astype(np.float64))
+    top, vecs = eigsh(norm_aff, k=min(MAX_SPEAKERS + 1, len(A) - 1), which="LA",
+                      v0=np.ones(len(A)), tol=1e-6)
+    order = np.argsort(-top)
+    vals, vecs = 1 - top[order], vecs[:, order]
     n = n or int(np.argmax(np.diff(vals[:MAX_SPEAKERS + 1])[1:]) + 2)
     if n == 1:
         return np.zeros(len(X), int)
