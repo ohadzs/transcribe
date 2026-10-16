@@ -35,6 +35,7 @@ class Segment:
     start: float
     end: float
     text: str
+    speaker: int | None = None  # 1, 2, ... with --speakers
 
 
 def machine() -> dict:
