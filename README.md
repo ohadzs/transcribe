@@ -22,6 +22,7 @@ transcribe ~/Downloads/lecture.m4a
 
 | Flag | What it does |
 |---|---|
+| `--lang <code>` | spoken language (`he`, `en`, `fr`, …). Default `auto`: detected from a 30-second sample. Hebrew uses the ivrit.ai models, anything else stock Whisper (speaker labels become `Speaker 1:`) |
 | `--accurate` | `large-v3` instead of `large-v3-turbo`: slightly better, ~3x slower |
 | `--local` | keep the transcript on this machine (`~/Documents/Transcripts`) instead of uploading it |
 | `-o <dir>` | local output folder (implies `--local`) |
@@ -82,6 +83,7 @@ transcribe ~/Downloads/recording.m4a
 
 | אפשרות | מה היא עושה |
 |---|---|
+| ‏`--lang <קוד>` | שפת הדיבור (‏`he`, ‏`en`, ‏`fr`…). ברירת מחדל ‏`auto`: זיהוי אוטומטי מדגימה של 30 שניות. עברית עם מודלי ivrit.ai, כל שפה אחרת עם Whisper הרגיל |
 | ‏`--accurate` | מודל ‏large-v3 הגדול: מדויק מעט יותר, איטי פי 3 בערך |
 | ‏`--local` | להשאיר את התמליל במחשב ולא להעלות לדרייב |
 | ‏`-o <תיקייה>` | תיקיית פלט מקומית אחרת (כמו ‏`--local`) |

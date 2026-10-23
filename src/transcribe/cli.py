@@ -1,4 +1,4 @@
-"""transcribe <file or link> -- Hebrew speech to text with ivrit.ai Whisper."""
+"""transcribe <file or link> -- speech to text: Hebrew with ivrit.ai Whisper, other languages with stock Whisper."""
 
 from __future__ import annotations
 
@@ -19,7 +19,8 @@ DEFAULT_OUT = Path.home() / "Documents" / "Transcripts"
 REMOTE = os.environ.get("TRANSCRIBE_REMOTE", "gdrive:Transcripts")
 PARAGRAPH_GAP = 1.5      # a pause this long (seconds) starts a new paragraph
 PARAGRAPH_CHARS = 700    # ...or a paragraph this long, at the next sentence end
-SPEAKER = "דובר {}: "   # speaker label (Hebrew: "Speaker N: ")
+SPEAKER = {"he": "דובר {}: "}   # speaker label per language (Hebrew: "Speaker N: ")
+SPEAKER_DEFAULT = "Speaker {}: "
 
 
 def ts(sec: float) -> str:
@@ -33,11 +34,11 @@ def safe_name(title: str) -> str:
     return name[:120] or "transcript"
 
 
-def speaker_tag(s: engine.Segment) -> str:
-    return SPEAKER.format(s.speaker) if s.speaker else ""
+def speaker_tag(s: engine.Segment, lang: str = "he") -> str:
+    return SPEAKER.get(lang, SPEAKER_DEFAULT).format(s.speaker) if s.speaker else ""
 
 
-def paragraphs(segs: list[engine.Segment]) -> list[str]:
+def paragraphs(segs: list[engine.Segment], lang: str = "he") -> list[str]:
     """Paragraphs break on long pauses, on length, and on every speaker change (labelled)."""
     paras, cur, prev = [], [], None
     for s in segs:
@@ -47,14 +48,14 @@ def paragraphs(segs: list[engine.Segment]) -> list[str]:
         if cur and (new_turn or long_pause or too_long):
             paras.append(" ".join(cur))
             cur = []
-        cur.append((speaker_tag(s) if prev is None or new_turn else "") + s.text)
+        cur.append((speaker_tag(s, lang) if prev is None or new_turn else "") + s.text)
         prev = s
     if cur:
         paras.append(" ".join(cur))
     return paras
 
 
-def write_outputs(segs: list[engine.Segment], title: str, out_dir: Path) -> tuple[Path, Path]:
+def write_outputs(segs: list[engine.Segment], title: str, out_dir: Path, lang: str = "he") -> tuple[Path, Path]:
     out_dir.mkdir(parents=True, exist_ok=True)
     base = safe_name(title)
     txt, stamped = out_dir / f"{base}.txt", out_dir / f"{base} - timestamps.txt"
@@ -62,8 +63,8 @@ def write_outputs(segs: list[engine.Segment], title: str, out_dir: Path) -> tupl
     while txt.exists() or stamped.exists():
         txt, stamped = out_dir / f"{base} ({n}).txt", out_dir / f"{base} ({n}) - timestamps.txt"
         n += 1
-    txt.write_text("\n\n".join(paragraphs(segs)) + "\n", encoding="utf-8")
-    stamped.write_text("".join(f"[{ts(s.start)} - {ts(s.end)}] {speaker_tag(s)}{s.text}\n" for s in segs), encoding="utf-8")
+    txt.write_text("\n\n".join(paragraphs(segs, lang)) + "\n", encoding="utf-8")
+    stamped.write_text("".join(f"[{ts(s.start)} - {ts(s.end)}] {speaker_tag(s, lang)}{s.text}\n" for s in segs), encoding="utf-8")
     return txt, stamped
 
 
@@ -98,7 +99,7 @@ def upload(files: tuple[Path, Path], remote: str) -> list[str] | None:
     return done
 
 
-def _with_speakers(audio: str, eng: str, model: str, num_speakers: int | None) -> list[engine.Segment]:
+def _with_speakers(audio: str, eng: str, model: str, lang: str, num_speakers: int | None) -> list[engine.Segment]:
     """Transcribe (GPU) and diarize (CPU, separate process) at the same time, then merge."""
     import multiprocessing
     from concurrent.futures import ProcessPoolExecutor
@@ -107,7 +108,7 @@ def _with_speakers(audio: str, eng: str, model: str, num_speakers: int | None) -
 
     with ProcessPoolExecutor(1, mp_context=multiprocessing.get_context("spawn")) as pool:
         turns = pool.submit(diarize.diarize, audio, num_speakers)
-        segs = engine.transcribe(audio, eng, model)
+        segs = engine.transcribe(audio, eng, model, lang)
         print("Waiting for speaker detection to finish...")
         turns = turns.result()
     labelled = diarize.label(segs, turns)
@@ -120,10 +121,12 @@ def _with_speakers(audio: str, eng: str, model: str, num_speakers: int | None) -
 
 
 def main(argv: list[str] | None = None) -> int:
-    p = argparse.ArgumentParser(prog="transcribe", description="Transcribe Hebrew audio to text (ivrit.ai Whisper).")
+    p = argparse.ArgumentParser(prog="transcribe", description="Transcribe speech to text (Hebrew: ivrit.ai Whisper; other languages: stock Whisper).")
     p.add_argument("source", help="audio/video file, YouTube link, or podcast episode link (Spotify / Apple / RSS)")
     p.add_argument("--local", action="store_true", help=f"keep the transcript on this machine instead of uploading it to {REMOTE}")
     p.add_argument("-o", "--out", type=Path, help=f"local output folder (implies --local; default: {DEFAULT_OUT})")
+    p.add_argument("--lang", default="auto", metavar="CODE",
+                   help='spoken language, e.g. he, en, fr (default: auto -- detected from a 30-second sample)')
     p.add_argument("--accurate", action="store_true", help="use the larger large-v3 model (slower, a bit more accurate)")
     p.add_argument("--title", help="override the output file name")
     p.add_argument("--no-speakers", dest="speakers", action="store_false",
@@ -135,8 +138,9 @@ def main(argv: list[str] | None = None) -> int:
     if a.num_speakers == 1:
         a.speakers = False
 
-    eng, model, m = engine.choose("accurate" if a.accurate else None)
-    print(f"Machine: {m['cpu']}, {m['ram_gb']:.0f} GB RAM -> engine {eng}, model {model}")
+    quality = "accurate" if a.accurate else None
+    eng, model, m = engine.choose(quality)
+    print(f"Machine: {m['cpu']}, {m['ram_gb']:.0f} GB RAM -> engine {eng}")
 
     with tempfile.TemporaryDirectory(prefix="transcribe-") as tmp:
         try:
@@ -144,19 +148,25 @@ def main(argv: list[str] | None = None) -> int:
         except sources.SourceError as e:
             print(f"\nError: {e}", file=sys.stderr)
             return 2
+        lang = a.lang.lower()
+        if lang == "auto":
+            lang = engine.detect_language(str(src.audio), eng)
+            print(f"Detected language: {lang}")
+        eng, model, _ = engine.choose(quality, lang)
+        print(f"Language {lang} -> model {model}")
         dur = engine.audio_duration(str(src.audio))
         print(f"Audio length: {ts(dur)}. Transcribing (first run downloads the model, ~1.6-3 GB)...")
         t0 = time.time()
         if a.speakers:
-            segs = _with_speakers(str(src.audio), eng, model, a.num_speakers)
+            segs = _with_speakers(str(src.audio), eng, model, lang, a.num_speakers)
         else:
-            segs = engine.transcribe(str(src.audio), eng, model)
+            segs = engine.transcribe(str(src.audio), eng, model, lang)
         took = time.time() - t0
 
     if not segs:
         print("No speech was recognized.", file=sys.stderr)
         return 1
-    txt, stamped = write_outputs(segs, a.title or src.title, a.out or DEFAULT_OUT)
+    txt, stamped = write_outputs(segs, a.title or src.title, a.out or DEFAULT_OUT, lang)
     speed = f" ({dur / took:.1f}x real time)" if took and dur else ""
     where = None if a.local or a.out else upload((txt, stamped), REMOTE)
     print(f"\nDone in {ts(took)}{speed}.")
