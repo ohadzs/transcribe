@@ -132,6 +132,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--no-speakers", dest="speakers", action="store_false",
                    help='don\'t mark speaker turns ("דובר 1:", "דובר 2:", ...); a bit faster')
     p.add_argument("--speakers", action="store_true", help=argparse.SUPPRESS)  # the default now; kept for old scripts
+    p.add_argument("--no-captions", dest="captions", action="store_false",
+                   help="transcribe a YouTube video even when it has manual (human-made) captions")
     p.add_argument("--num-speakers", type=int, metavar="N", help="how many speakers there are, if known")
     p.set_defaults(speakers=True)
     a = p.parse_args(argv)
@@ -144,24 +146,27 @@ def main(argv: list[str] | None = None) -> int:
 
     with tempfile.TemporaryDirectory(prefix="transcribe-") as tmp:
         try:
-            src = sources.resolve(a.source, Path(tmp))
+            src = sources.resolve(a.source, Path(tmp), a.lang.lower() if a.captions else None)
         except sources.SourceError as e:
             print(f"\nError: {e}", file=sys.stderr)
             return 2
-        lang = a.lang.lower()
-        if lang == "auto":
-            lang = engine.detect_language(str(src.audio), eng)
-            print(f"Detected language: {lang}")
-        eng, model, _ = engine.choose(quality, lang)
-        print(f"Language {lang} -> model {model}")
-        dur = engine.audio_duration(str(src.audio))
-        print(f"Audio length: {ts(dur)}. Transcribing (first run downloads the model, ~1.6-3 GB)...")
-        t0 = time.time()
-        if a.speakers:
-            segs = _with_speakers(str(src.audio), eng, model, lang, a.num_speakers)
+        if src.segments:  # manual captions: nothing to transcribe
+            segs, lang, dur, took = src.segments, src.lang, 0.0, 0.0
         else:
-            segs = engine.transcribe(str(src.audio), eng, model, lang)
-        took = time.time() - t0
+            lang = a.lang.lower()
+            if lang == "auto":
+                lang = engine.detect_language(str(src.audio), eng)
+                print(f"Detected language: {lang}")
+            eng, model, _ = engine.choose(quality, lang)
+            print(f"Language {lang} -> model {model}")
+            dur = engine.audio_duration(str(src.audio))
+            print(f"Audio length: {ts(dur)}. Transcribing (first run downloads the model, ~1.6-3 GB)...")
+            t0 = time.time()
+            if a.speakers:
+                segs = _with_speakers(str(src.audio), eng, model, lang, a.num_speakers)
+            else:
+                segs = engine.transcribe(str(src.audio), eng, model, lang)
+            took = time.time() - t0
 
     if not segs:
         print("No speech was recognized.", file=sys.stderr)
