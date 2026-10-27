@@ -29,7 +29,6 @@ transcribe ~/Downloads/lecture.m4a
 | `--title <name>` | output file name instead of the episode title |
 | `--no-speakers` | don't mark who is speaking (on by default, see below); ~10-20% faster |
 | `--num-speakers N` | the number of speakers, if you know it (`1` = no labels, skip detection) |
-| `--no-captions` | transcribe a YouTube video even if it has manual captions (see below) |
 
 Output: `<title>.txt` (clean paragraphs) and `<title> - timestamps.txt` (one line per segment with start/end times).
 
@@ -41,8 +40,6 @@ How: a speaker-embedding model (NVIDIA TitaNet-small, ONNX via [sherpa-onnx](htt
 Where it goes: by default both files are uploaded with [rclone](https://rclone.org) to `gdrive:Transcripts` (your Google Drive, so your AI can read them from anywhere) and the local copies are deleted. Set `TRANSCRIBE_REMOTE` to use another rclone remote/folder. If rclone is missing or the upload fails, the files stay in `~/Documents/Transcripts` and you get a warning — a transcript is never lost. `--local` skips the upload.
 
 Inputs: local audio/video, YouTube (via yt-dlp), Apple Podcasts, direct audio URLs, and Spotify episode links — a Spotify link is resolved to the same episode in the show's **public RSS feed** (via the iTunes Search API). Spotify-exclusive episodes stop with a clear message; the tool does not bypass DRM.
-
-YouTube manual captions: if the video has human-made captions in its own language (or in `--lang`), they are used as the transcript and nothing is transcribed — a few seconds instead of minutes, and more accurate than any model. Auto-generated captions are ignored (Whisper beats them, especially in Hebrew). Captions carry no speaker labels; `--no-captions` transcribes anyway.
 
 Speed (M4, 16 GB): turbo ≈ 10-12x real time — a 40-minute episode in ~3.5-4 minutes. Speaker detection costs ~10-20% of that (51-min interview: 5:03 with `--no-speakers`, 5:23 with labels).
 
@@ -60,7 +57,7 @@ The code is MIT. What you transcribe is your responsibility: a transcript is a c
 
 ## מה הוא מקבל
 - קובץ מקומי: ‏mp3, ‏m4a, ‏wav, ‏mp4 (ועוד)
-- קישור ליוטיוב (אם יש לסרטון כתוביות ידניות בשפה שלו, משתמשים בהן ולא מתמללים)
+- קישור ליוטיוב
 - קישור לפרק פודקאסט: ספוטיפיי, ‏Apple Podcasts, או קישור ישיר לקובץ שמע
 - בספוטיפיי: הכלי מוצא את אותו פרק בפיד ה־RSS הציבורי של התוכנית ומוריד משם. אם הפרק בלעדי לספוטיפיי, הכלי אומר את זה ועוצר — הוא לא עוקף הגנות.
 
@@ -93,7 +90,6 @@ transcribe ~/Downloads/recording.m4a
 | ‏`--title <שם>` | שם קובץ אחר במקום שם הפרק |
 | ‏`--no-speakers` | בלי סימון דוברים (מופעל כברירת מחדל), מהיר בערך ב־10-20% |
 | ‏`--num-speakers N` | כמה דוברים יש, אם ידוע (‏`1` = בלי סימון) |
-| ‏`--no-captions` | לתמלל סרטון יוטיוב גם אם יש לו כתוביות ידניות |
 
 ## פלט
 כברירת מחדל התמליל עולה לגוגל דרייב, לתיקייה ‏`Transcripts` (דרך ‏rclone, ‏remote בשם ‏`gdrive:`), והעותק המקומי נמחק. אם ההעלאה נכשלת — הקבצים נשארים ב־‏`~/Documents/Transcripts` ומופיעה אזהרה. עם ‏`--local` הם נשארים שם מלכתחילה. לפי שם הפרק:

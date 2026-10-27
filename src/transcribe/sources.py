@@ -16,8 +16,6 @@ from pathlib import Path
 
 from tqdm import tqdm
 
-from .engine import Segment, clean
-
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/126 Safari/537.36"
 AUDIO_EXT = {".mp3", ".m4a", ".wav", ".mp4", ".aac", ".ogg", ".flac", ".webm", ".mov", ".mkv", ".opus"}
 
@@ -28,10 +26,8 @@ class SourceError(Exception):
 
 @dataclass
 class Source:
-    audio: Path | None
+    audio: Path
     title: str
-    segments: list[Segment] | None = None  # set when the text came from manual captions
-    lang: str | None = None
 
 
 def _get(url: str) -> bytes:
@@ -80,46 +76,7 @@ def _is_youtube(url: str) -> bool:
     return any(h in host for h in ("youtube.com", "youtu.be"))
 
 
-def _norm_lang(code: str) -> str:
-    base = code.split("-")[0].lower()
-    return "he" if base == "iw" else base  # YouTube still uses the old Hebrew code
-
-
-def _pick_manual_track(info: dict, want: str) -> str | None:
-    """The video's human-made caption track in the wanted (or the video's own) language, if any."""
-    tracks = [k for k in (info.get("subtitles") or {}) if k != "live_chat"]
-    if want == "auto":
-        want = info.get("language") or ""
-        if not want and len(tracks) == 1:
-            return tracks[0]
-    want = _norm_lang(want) if want else ""
-    return next((k for k in tracks if _norm_lang(k) == want), None)
-
-
-def _manual_captions(exe: str, extra: list[str], url: str, info: dict, want: str, workdir: Path) -> list[Segment] | None:
-    track = _pick_manual_track(info, want)
-    if not track:
-        return None
-    print(f"The video has manual captions ({track}) -- using them instead of transcribing.")
-    r = subprocess.run(
-        [exe, "--no-playlist", "--skip-download", "--write-subs", "--sub-langs", track,
-         "--sub-format", "json3", *extra, "-o", str(workdir / "subs"), url],
-        capture_output=True, text=True,
-    )
-    files = sorted(workdir.glob("subs*.json3"))
-    if r.returncode != 0 or not files:
-        print("Could not download the captions -- transcribing instead.")
-        return None
-    segs = []
-    for ev in json.loads(files[0].read_text(encoding="utf-8")).get("events", []):
-        text = clean("".join(x.get("utf8", "") for x in ev.get("segs") or []).replace("\n", " "))
-        if text:
-            start = ev.get("tStartMs", 0) / 1000
-            segs.append(Segment(start, start + ev.get("dDurationMs", 0) / 1000, text))
-    return segs or None
-
-
-def _yt_dlp(url: str, workdir: Path, captions: str | None = None) -> Source:
+def _yt_dlp(url: str, workdir: Path) -> Source:
     # Prefer the yt-dlp bundled with this tool (kept current with it) over a system one.
     bundled = Path(sys.executable).parent / "yt-dlp"
     exe = str(bundled) if bundled.exists() else (shutil.which("yt-dlp") or "yt-dlp")
@@ -138,13 +95,7 @@ def _yt_dlp(url: str, workdir: Path, captions: str | None = None) -> Source:
             if info.returncode != 0:
                 last_err = info.stderr.strip()[-500:]
                 continue
-            meta = json.loads(info.stdout)
-            title = meta.get("title") or "audio"
-            if captions and _is_youtube(url):
-                segs = _manual_captions(exe, extra, url, meta, captions, workdir)
-                if segs:
-                    track = _pick_manual_track(meta, captions)
-                    return Source(audio=None, title=title, segments=segs, lang=_norm_lang(track))
+            title = json.loads(info.stdout).get("title") or "audio"
         for f in workdir.glob("download.*"):  # leftovers from a failed attempt
             f.unlink()
         print("Downloading audio...")
@@ -244,8 +195,7 @@ def _apple(url: str, workdir: Path) -> Source:
 
 # ---------- dispatch ----------
 
-def resolve(arg: str, workdir: Path, captions: str | None = None) -> Source:
-    """captions: language code or "auto" to use a YouTube video's manual captions when it has them."""
+def resolve(arg: str, workdir: Path) -> Source:
     if not re.match(r"^https?://", arg):
         return _local(Path(arg).expanduser())
     host = urllib.parse.urlparse(arg).netloc.lower()
@@ -257,4 +207,4 @@ def resolve(arg: str, workdir: Path, captions: str | None = None) -> Source:
     if path_ext in AUDIO_EXT:  # direct link to an audio file
         name = urllib.parse.unquote(Path(urllib.parse.urlparse(arg).path).stem)
         return Source(audio=_download(arg, workdir / "download", "Downloading"), title=name)
-    return _yt_dlp(arg, workdir, captions)  # YouTube and most podcast sites
+    return _yt_dlp(arg, workdir)  # YouTube and most podcast sites
